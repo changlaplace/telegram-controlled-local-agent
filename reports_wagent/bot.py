@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import AbstractAsyncContextManager
 
+from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from telegram import Update
 from telegram.constants import ChatAction
@@ -166,7 +169,8 @@ async def post_init(application: Application) -> None:
     memory_context = AsyncSqliteSaver.from_conn_string(str(settings.agent_memory_db))
     checkpointer = await memory_context.__aenter__()
     application.bot_data["memory_context"] = memory_context
-    application.bot_data["agent_service"] = AgentService(settings, checkpointer)
+    tools = await _load_tavily_tools(settings)
+    application.bot_data["agent_service"] = AgentService(settings, checkpointer, tools)
 
 
 async def post_shutdown(application: Application) -> None:
@@ -175,6 +179,30 @@ async def post_shutdown(application: Application) -> None:
     )
     if memory_context is not None:
         await memory_context.__aexit__(None, None, None)
+
+
+async def _load_tavily_tools(settings: Settings) -> list[BaseTool]:
+    if settings.tavily_api_key is None:
+        LOGGER.info("TAVILY_API_KEY is not set; Tavily MCP web tools are disabled.")
+        return []
+
+    headers = {"Authorization": f"Bearer {settings.tavily_api_key}"}
+    if settings.tavily_default_parameters:
+        headers["DEFAULT_PARAMETERS"] = json.dumps(settings.tavily_default_parameters)
+
+    client = MultiServerMCPClient(
+        {
+            "tavily": {
+                "transport": "streamable_http",
+                "url": settings.tavily_mcp_url,
+                "headers": headers,
+            }
+        },
+        tool_name_prefix=True,
+    )
+    tools = await client.get_tools(server_name="tavily")
+    LOGGER.info("Loaded %d Tavily MCP tool(s).", len(tools))
+    return tools
 
 
 def main() -> None:
@@ -194,9 +222,10 @@ def main() -> None:
             "Use /whoami to discover your ID."
         )
     LOGGER.info(
-        "Starting Telegram bot with model %s, workspace %s, and memory DB %s",
+        "Starting Telegram bot with model %s, workspace %s, memory DB %s, and Tavily MCP %s",
         settings.deepseek_model,
         settings.agent_workspace,
         settings.agent_memory_db,
+        "enabled" if settings.tavily_api_key else "disabled",
     )
     build_application(settings).run_polling(drop_pending_updates=True)

@@ -5,8 +5,9 @@ The display name is Reports Agent.
 
 A minimal Telegram frontend for a LangChain Deep Agent using DeepSeek. The agent
 can inspect and edit files, run shell commands, run Python, and install packages
-inside `AGENT_WORKSPACE`. Conversation checkpoints are stored in SQLite, so chat
-memory survives bot restarts.
+inside `AGENT_WORKSPACE`. It can also use Tavily remote MCP for live web search
+when `TAVILY_API_KEY` is configured. Conversation checkpoints are stored in
+SQLite, so chat memory survives bot restarts.
 
 ## Setup
 
@@ -20,8 +21,9 @@ memory survives bot restarts.
    Copy-Item .env.example .env
    ```
 
-4. Edit `.env` and set `TELEGRAM_BOT_TOKEN` and `DEEPSEEK_API_KEY`. Leave
-   `TELEGRAM_ALLOWED_USER_IDS` empty for the first launch.
+4. Edit `.env` and set `TELEGRAM_BOT_TOKEN` and `DEEPSEEK_API_KEY`. To enable
+   web search, also set `TAVILY_API_KEY`. Leave `TELEGRAM_ALLOWED_USER_IDS`
+   empty for the first launch.
 5. Start the bot:
 
    ```powershell
@@ -54,3 +56,21 @@ and use a private chat for this local development bot.
 
 For package installs inside `agent_workspace`, ask the agent to use `uv init`
 and `uv add <package>`.
+
+## Tavily MCP
+
+Set this in `.env`:
+
+```env
+TAVILY_API_KEY=tvly-your-key
+TAVILY_MCP_URL=https://mcp.tavily.com/mcp/
+```
+
+Optional defaults can be passed as JSON:
+
+```env
+TAVILY_DEFAULT_PARAMETERS={"search_depth":"basic","max_results":5}
+```
+
+Then restart the bot and ask something like `Search the web for the latest
+LangChain Deep Agents MCP docs and summarize with links.`

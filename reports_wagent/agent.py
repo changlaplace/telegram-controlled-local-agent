@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
+from langchain_core.tools import BaseTool
 from langchain_deepseek import ChatDeepSeek
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -19,6 +20,9 @@ tools. Paths are virtual and rooted at the workspace. You also have shell access
 whose current working directory is the configured workspace. Use shell commands for
 running Python, tests, and package management when needed. Prefer uv commands for
 Python project setup and dependency installation.
+
+When Tavily MCP tools are available, use them for live web search, URL extraction,
+crawling, and web research. Summarize web findings with source URLs.
 
 Make focused changes, explain what you changed, and ask before making broad,
 destructive, or system-level changes. Stay inside the configured workspace unless
@@ -70,7 +74,12 @@ def _message_text(message: Any) -> str:
 
 
 class AgentService:
-    def __init__(self, settings: Settings, checkpointer: AsyncSqliteSaver) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        checkpointer: AsyncSqliteSaver,
+        tools: Sequence[BaseTool] = (),
+    ) -> None:
         self._checkpointer = checkpointer
         self._locks: dict[str, asyncio.Lock] = {}
         model = ChatDeepSeek(
@@ -90,6 +99,7 @@ class AgentService:
         )
         self._agent = create_deep_agent(
             model=model,
+            tools=tools,
             system_prompt=SYSTEM_PROMPT,
             backend=backend,
             checkpointer=self._checkpointer,

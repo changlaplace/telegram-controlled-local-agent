@@ -7,7 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
     "deepagents>=0.7.1",
     "langchain-deepseek>=1.1.0",
+    "langchain-mcp-adapters>=0.3.1",
     "langgraph-checkpoint-sqlite>=3.1.1",
+    "mcp<2",
     "python-dotenv>=1.2.2",
     "python-telegram-bot>=22.8",
 ]

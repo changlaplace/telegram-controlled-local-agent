@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -30,6 +32,9 @@ class Settings:
     deepseek_model: str
     agent_workspace: Path
     agent_memory_db: Path
+    tavily_api_key: str | None = field(default=None, repr=False)
+    tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
+    tavily_default_parameters: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -60,6 +65,10 @@ class Settings:
             .expanduser()
             .resolve()
         )
+        tavily_default_parameters = _parse_json_object(
+            os.getenv("TAVILY_DEFAULT_PARAMETERS", "").strip(),
+            "TAVILY_DEFAULT_PARAMETERS",
+        )
 
         return cls(
             telegram_bot_token=telegram_token,
@@ -70,4 +79,21 @@ class Settings:
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash").strip(),
             agent_workspace=workspace,
             agent_memory_db=memory_db,
+            tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip() or None,
+            tavily_mcp_url=os.getenv(
+                "TAVILY_MCP_URL", "https://mcp.tavily.com/mcp/"
+            ).strip(),
+            tavily_default_parameters=tavily_default_parameters,
         )
+
+
+def _parse_json_object(raw_value: str, name: str) -> dict[str, Any]:
+    if not raw_value:
+        return {}
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"{name} must be valid JSON.") from exc
+    if not isinstance(value, dict):
+        raise ConfigurationError(f"{name} must be a JSON object.")
+    return value

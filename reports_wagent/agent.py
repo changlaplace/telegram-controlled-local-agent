@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from collections.abc import Mapping
+from typing import Any
+
+from deepagents import create_deep_agent
+from deepagents.backends import LocalShellBackend
+from langchain_deepseek import ChatDeepSeek
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+from reports_wagent.config import Settings
+
+SYSTEM_PROMPT = """You are a careful coding agent working through Telegram.
+
+You may inspect and edit files inside the configured workspace using your filesystem
+tools. Paths are virtual and rooted at the workspace. You also have shell access
+whose current working directory is the configured workspace. Use shell commands for
+running Python, tests, and package management when needed. Prefer uv commands for
+Python project setup and dependency installation.
+
+Make focused changes, explain what you changed, and ask before making broad,
+destructive, or system-level changes. Stay inside the configured workspace unless
+the user explicitly asks otherwise. Never request, reveal, or attempt to access
+credentials or secret files.
+"""
+
+SHELL_ENV_ALLOWLIST = {
+    "COMSPEC",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "LOCALAPPDATA",
+    "NUMBER_OF_PROCESSORS",
+    "OS",
+    "PATH",
+    "PATHEXT",
+    "PROCESSOR_ARCHITECTURE",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "PSMODULEPATH",
+    "SYSTEMDRIVE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "USERDOMAIN",
+    "USERNAME",
+    "USERPROFILE",
+    "WINDIR",
+}
+
+
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return str(content).strip()
+
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, Mapping):
+            text = block.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "\n".join(parts).strip()
+
+
+class AgentService:
+    def __init__(self, settings: Settings, checkpointer: AsyncSqliteSaver) -> None:
+        self._checkpointer = checkpointer
+        self._locks: dict[str, asyncio.Lock] = {}
+        model = ChatDeepSeek(
+            model=settings.deepseek_model,
+            api_key=settings.deepseek_api_key,
+            temperature=0,
+            max_retries=2,
+            timeout=120,
+        )
+        backend = LocalShellBackend(
+            root_dir=settings.agent_workspace,
+            virtual_mode=True,
+            timeout=120,
+            max_output_bytes=80_000,
+            env=_sanitized_shell_env(),
+            inherit_env=False,
+        )
+        self._agent = create_deep_agent(
+            model=model,
+            system_prompt=SYSTEM_PROMPT,
+            backend=backend,
+            checkpointer=self._checkpointer,
+        )
+
+    async def ask(self, thread_id: str, prompt: str) -> str:
+        async with self._lock_for(thread_id):
+            result = await self._agent.ainvoke(
+                {"messages": [{"role": "user", "content": prompt}]},
+                config={
+                    "configurable": {"thread_id": thread_id},
+                    "recursion_limit": 50,
+                },
+            )
+
+        messages = result.get("messages", [])
+        if not messages:
+            return "The agent finished without returning a text response."
+        return _message_text(messages[-1]) or (
+            "The agent finished without returning a text response."
+        )
+
+    async def reset(self, thread_id: str) -> None:
+        async with self._lock_for(thread_id):
+            await self._checkpointer.adelete_thread(thread_id)
+
+    def _lock_for(self, thread_id: str) -> asyncio.Lock:
+        return self._locks.setdefault(thread_id, asyncio.Lock())
+
+
+def _sanitized_shell_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in SHELL_ENV_ALLOWLIST
+    }

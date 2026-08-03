@@ -168,3 +168,17 @@ To stop the hidden agent:
 $status = Get-Content "$root\.agent_runtime\status.json" | ConvertFrom-Json
 Stop-Process -Id $status.pid
 ```
+
+## Codex CLI Skill
+
+The Deep Agent loads project skills from:
+
+```text
+agent_workspace\skills
+```
+
+The included `codex-cli` skill teaches it how to invoke the local Codex CLI with
+`codex exec`, model selection, review mode, and goal-oriented prompts.
+
+After changing skills, restart the bot. If an existing Telegram thread does not
+notice the new skill, send `/reset` once.

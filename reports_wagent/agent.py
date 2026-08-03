@@ -31,6 +31,7 @@ credentials or secret files.
 """
 
 SHELL_ENV_ALLOWLIST = {
+    "CODEX_CLI_PATH",
     "COMSPEC",
     "HOMEDRIVE",
     "HOMEPATH",
@@ -100,6 +101,7 @@ class AgentService:
         self._agent = create_deep_agent(
             model=model,
             tools=tools,
+            skills=["/skills"],
             system_prompt=SYSTEM_PROMPT,
             backend=backend,
             checkpointer=self._checkpointer,

@@ -1,8 +1,9 @@
 import unittest
 from pathlib import Path
 
-from reports_wagent.bot import _chunks, _load_tavily_tools, _with_transcription
+from reports_wagent.bot import _chunks, _with_transcription
 from reports_wagent.config import Settings
+from reports_wagent.mcp_tools import load_mcp_tools
 
 
 class ChunkTests(unittest.TestCase):
@@ -36,7 +37,7 @@ class TavilyToolTests(unittest.IsolatedAsyncioTestCase):
             tavily_api_key=None,
         )
 
-        self.assertEqual(await _load_tavily_tools(settings), [])
+        self.assertEqual(await load_mcp_tools(settings), [])
 
 
 if __name__ == "__main__":

@@ -118,6 +118,44 @@ TAVILY_DEFAULT_PARAMETERS={"search_depth":"basic","max_results":5}
 Then restart the bot and ask something like `Search the web for the latest
 LangChain Deep Agents MCP docs and summarize with links.`
 
+## Expandable MCPs
+
+MCP loading is centralized in `reports_wagent/mcp_tools.py`. Tavily, LinkedIn,
+and any extra JSON-configured MCP servers are loaded together and passed to the
+Deep Agent as prefixed tools.
+
+### LinkedIn MCP
+
+The LinkedIn MCP server uses your own browser session. Log in locally first:
+
+```powershell
+uvx mcp-server-linkedin@latest --login
+```
+
+Then enable it in `.env`:
+
+```env
+LINKEDIN_MCP_ENABLED=true
+LINKEDIN_MCP_COMMAND=uvx
+LINKEDIN_MCP_ARGS=["mcp-server-linkedin@latest"]
+LINKEDIN_MCP_ENV={"UV_HTTP_TIMEOUT":"300"}
+```
+
+Restart the bot after enabling it. Early tool calls may need a retry while the
+LinkedIn MCP server prepares its browser cache.
+
+Use LinkedIn automation sparingly. The server controls a real browser session,
+and automated LinkedIn access may violate LinkedIn's terms or restrict your
+account.
+
+### Generic MCP Servers
+
+Add extra MCP servers without code changes:
+
+```env
+MCP_SERVERS_JSON={"my_server":{"transport":"stdio","command":"uvx","args":["some-mcp@latest"]}}
+```
+
 ## Background Run
 
 On Windows, use `Start-Process` as the `nohup`-style launcher. This starts the
@@ -145,6 +183,12 @@ This starts the hidden agent and opens the tiny status monitor. To stop it:
 
 ```powershell
 .\stop_agent.bat
+```
+
+After changing `.env`, MCP settings, or code, restart the hidden agent:
+
+```powershell
+.\restart_agent.bat
 ```
 
 To open only the status monitor:

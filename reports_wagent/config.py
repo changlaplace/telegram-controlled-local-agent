@@ -24,6 +24,10 @@ def _parse_user_ids(raw_value: str) -> frozenset[int]:
         ) from exc
 
 
+def _parse_bool(raw_value: str) -> bool:
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     telegram_bot_token: str = field(repr=False)
@@ -44,6 +48,13 @@ class Settings:
     tavily_api_key: str | None = field(default=None, repr=False)
     tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
     tavily_default_parameters: dict[str, Any] = field(default_factory=dict)
+    linkedin_mcp_enabled: bool = False
+    linkedin_mcp_command: str = "uvx"
+    linkedin_mcp_args: list[str] = field(
+        default_factory=lambda: ["mcp-server-linkedin@latest"]
+    )
+    linkedin_mcp_env: dict[str, Any] = field(default_factory=dict)
+    mcp_servers_json: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -82,6 +93,18 @@ class Settings:
         tavily_default_parameters = _parse_json_object(
             os.getenv("TAVILY_DEFAULT_PARAMETERS", "").strip(),
             "TAVILY_DEFAULT_PARAMETERS",
+        )
+        linkedin_mcp_args = _parse_json_array(
+            os.getenv("LINKEDIN_MCP_ARGS", '["mcp-server-linkedin@latest"]').strip(),
+            "LINKEDIN_MCP_ARGS",
+        )
+        linkedin_mcp_env = _parse_json_object(
+            os.getenv("LINKEDIN_MCP_ENV", '{"UV_HTTP_TIMEOUT":"300"}').strip(),
+            "LINKEDIN_MCP_ENV",
+        )
+        mcp_servers_json = _parse_json_object(
+            os.getenv("MCP_SERVERS_JSON", "").strip(),
+            "MCP_SERVERS_JSON",
         )
         transcription_provider = os.getenv("TRANSCRIPTION_PROVIDER", "local").strip()
         if transcription_provider not in {"local", "openai", "off"}:
@@ -131,6 +154,11 @@ class Settings:
                 "TAVILY_MCP_URL", "https://mcp.tavily.com/mcp/"
             ).strip(),
             tavily_default_parameters=tavily_default_parameters,
+            linkedin_mcp_enabled=_parse_bool(os.getenv("LINKEDIN_MCP_ENABLED", "")),
+            linkedin_mcp_command=os.getenv("LINKEDIN_MCP_COMMAND", "uvx").strip(),
+            linkedin_mcp_args=[str(arg) for arg in linkedin_mcp_args],
+            linkedin_mcp_env=linkedin_mcp_env,
+            mcp_servers_json=mcp_servers_json,
         )
 
 
@@ -143,4 +171,16 @@ def _parse_json_object(raw_value: str, name: str) -> dict[str, Any]:
         raise ConfigurationError(f"{name} must be valid JSON.") from exc
     if not isinstance(value, dict):
         raise ConfigurationError(f"{name} must be a JSON object.")
+    return value
+
+
+def _parse_json_array(raw_value: str, name: str) -> list[Any]:
+    if not raw_value:
+        return []
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"{name} must be valid JSON.") from exc
+    if not isinstance(value, list):
+        raise ConfigurationError(f"{name} must be a JSON array.")
     return value

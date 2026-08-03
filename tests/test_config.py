@@ -7,6 +7,7 @@ from unittest.mock import patch
 from reports_wagent.config import (
     ConfigurationError,
     Settings,
+    _parse_bool,
     _parse_json_object,
     _parse_user_ids,
 )
@@ -29,6 +30,11 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             _parse_json_object("[1, 2, 3]", "NAME")
 
+    def test_parse_bool(self) -> None:
+        self.assertTrue(_parse_bool("true"))
+        self.assertTrue(_parse_bool("1"))
+        self.assertFalse(_parse_bool("false"))
+
     def test_settings_load_required_values(self) -> None:
         with tempfile.TemporaryDirectory() as workspace:
             env = {
@@ -41,6 +47,7 @@ class ConfigTests(unittest.TestCase):
                 "TRANSCRIPTION_LANGUAGE": "en",
                 "TAVILY_API_KEY": "tavily-secret",
                 "TAVILY_DEFAULT_PARAMETERS": '{"max_results": 5}',
+                "LINKEDIN_MCP_ENABLED": "true",
             }
             with patch.dict(os.environ, env, clear=True):
                 settings = Settings.from_env()
@@ -51,6 +58,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.transcription_language, "en")
         self.assertEqual(settings.tavily_api_key, "tavily-secret")
         self.assertEqual(settings.tavily_default_parameters, {"max_results": 5})
+        self.assertTrue(settings.linkedin_mcp_enabled)
+        self.assertEqual(settings.linkedin_mcp_command, "uvx")
 
 
 if __name__ == "__main__":

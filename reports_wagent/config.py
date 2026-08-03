@@ -33,6 +33,14 @@ class Settings:
     agent_workspace: Path
     agent_memory_db: Path
     agent_status_file: Path
+    openai_api_key: str | None = field(default=None, repr=False)
+    transcription_provider: str = "local"
+    transcription_model: str = "gpt-4o-mini-transcribe"
+    transcription_language: str | None = None
+    local_transcription_model: str = "base"
+    local_transcription_device: str = "cpu"
+    local_transcription_compute_type: str = "int8"
+    local_transcription_model_dir: Path | None = None
     tavily_api_key: str | None = field(default=None, repr=False)
     tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
     tavily_default_parameters: dict[str, Any] = field(default_factory=dict)
@@ -75,10 +83,26 @@ class Settings:
             os.getenv("TAVILY_DEFAULT_PARAMETERS", "").strip(),
             "TAVILY_DEFAULT_PARAMETERS",
         )
+        transcription_provider = os.getenv("TRANSCRIPTION_PROVIDER", "local").strip()
+        if transcription_provider not in {"local", "openai", "off"}:
+            raise ConfigurationError(
+                "TRANSCRIPTION_PROVIDER must be one of: local, openai, off."
+            )
+        local_transcription_model_dir = (
+            Path(
+                os.getenv(
+                    "LOCAL_TRANSCRIPTION_MODEL_DIR",
+                    ".agent_runtime/whisper_models",
+                )
+            )
+            .expanduser()
+            .resolve()
+        )
 
         return cls(
             telegram_bot_token=telegram_token,
             deepseek_api_key=deepseek_key,
+            openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,
             allowed_user_ids=_parse_user_ids(
                 os.getenv("TELEGRAM_ALLOWED_USER_IDS", "")
             ),
@@ -86,6 +110,22 @@ class Settings:
             agent_workspace=workspace,
             agent_memory_db=memory_db,
             agent_status_file=status_file,
+            transcription_provider=transcription_provider,
+            transcription_model=os.getenv(
+                "TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
+            ).strip(),
+            transcription_language=os.getenv("TRANSCRIPTION_LANGUAGE", "").strip()
+            or None,
+            local_transcription_model=os.getenv(
+                "LOCAL_TRANSCRIPTION_MODEL", "base"
+            ).strip(),
+            local_transcription_device=os.getenv(
+                "LOCAL_TRANSCRIPTION_DEVICE", "cpu"
+            ).strip(),
+            local_transcription_compute_type=os.getenv(
+                "LOCAL_TRANSCRIPTION_COMPUTE_TYPE", "int8"
+            ).strip(),
+            local_transcription_model_dir=local_transcription_model_dir,
             tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip() or None,
             tavily_mcp_url=os.getenv(
                 "TAVILY_MCP_URL", "https://mcp.tavily.com/mcp/"

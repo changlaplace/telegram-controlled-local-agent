@@ -6,8 +6,9 @@ The display name is Reports Agent.
 A minimal Telegram frontend for a LangChain Deep Agent using DeepSeek. The agent
 can inspect and edit files, run shell commands, run Python, and install packages
 inside `AGENT_WORKSPACE`. It can also use Tavily remote MCP for live web search
-when `TAVILY_API_KEY` is configured. Conversation checkpoints are stored in
-SQLite, so chat memory survives bot restarts.
+when `TAVILY_API_KEY` is configured, and transcribes Telegram voice/audio
+messages locally by default. Conversation checkpoints are stored in SQLite, so
+chat memory survives bot restarts.
 
 ## Setup
 
@@ -21,9 +22,10 @@ SQLite, so chat memory survives bot restarts.
    Copy-Item .env.example .env
    ```
 
-4. Edit `.env` and set `TELEGRAM_BOT_TOKEN` and `DEEPSEEK_API_KEY`. To enable
-   web search, also set `TAVILY_API_KEY`. Leave `TELEGRAM_ALLOWED_USER_IDS`
-   empty for the first launch.
+4. Edit `.env` and set `TELEGRAM_BOT_TOKEN` and `DEEPSEEK_API_KEY`. Voice/audio
+   transcription runs locally by default. To enable web search, also set
+   `TAVILY_API_KEY`. Leave `TELEGRAM_ALLOWED_USER_IDS` empty for the first
+   launch.
 5. Start the bot:
 
    ```powershell
@@ -56,6 +58,47 @@ and use a private chat for this local development bot.
 
 For package installs inside `agent_workspace`, ask the agent to use `uv init`
 and `uv add <package>`.
+
+## Audio Transcription
+
+Telegram voice notes and audio files are transcribed before they are sent to the
+agent. The bot prefixes every audio-triggered reply with:
+
+```text
+Transcription:
+...
+```
+
+Local transcription is the default and does not require an API key:
+
+```env
+TRANSCRIPTION_PROVIDER=local
+LOCAL_TRANSCRIPTION_MODEL=base
+LOCAL_TRANSCRIPTION_DEVICE=cpu
+LOCAL_TRANSCRIPTION_COMPUTE_TYPE=int8
+LOCAL_TRANSCRIPTION_MODEL_DIR=./.agent_runtime/whisper_models
+```
+
+The first audio message downloads the selected Whisper model. `base` is a small,
+CPU-friendly multilingual model. For better accuracy, use `small` or `medium`;
+for faster but weaker transcription, use `tiny`.
+
+OpenAI transcription is still available if you explicitly choose it:
+
+```env
+TRANSCRIPTION_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key
+TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+```
+
+The language is auto-detected by default. To improve accuracy and latency, set
+an ISO-639-1 language hint:
+
+```env
+TRANSCRIPTION_LANGUAGE=en
+```
+
+Examples include `en`, `zh`, `ja`, `ko`, `es`, `fr`, and `de`.
 
 ## Tavily MCP
 

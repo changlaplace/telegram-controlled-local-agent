@@ -26,6 +26,10 @@ from telegram.ext import (
 
 from reports_wagent.agent import AgentService
 from reports_wagent.config import ConfigurationError, Settings
+from reports_wagent.transcription import (
+    TranscriptionService,
+    audio_payload_from_message,
+)
 
 LOGGER = logging.getLogger(__name__)
 TELEGRAM_MESSAGE_LIMIT = 4000
@@ -146,6 +150,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _reply(update, answer)
 
 
+async def handle_audio_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    settings: Settings = context.application.bot_data["settings"]
+    if not _is_allowed(update, settings):
+        await _reply(
+            update,
+            "Agent access is locked for this user. Use /whoami, add that user ID "
+            "to TELEGRAM_ALLOWED_USER_IDS, and restart the bot.",
+        )
+        return
+
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        return
+
+    transcription_service: TranscriptionService | None = (
+        context.application.bot_data.get("transcription_service")
+    )
+    if transcription_service is None:
+        await _reply(
+            update,
+            "Audio transcription is disabled. Set TRANSCRIPTION_PROVIDER=local "
+            "or TRANSCRIPTION_PROVIDER=openai in .env and restart the bot.",
+        )
+        return
+
+    await context.bot.send_chat_action(chat_id=chat.id, action=ChatAction.TYPING)
+    try:
+        payload = await audio_payload_from_message(message)
+        if payload is None:
+            return
+        transcript = await transcription_service.transcribe(payload)
+        service: AgentService = context.application.bot_data["agent_service"]
+        answer = await service.ask(_thread_id(update), transcript)
+    except Exception:
+        LOGGER.exception(
+            "Audio agent request failed for user %s", update.effective_user.id
+        )
+        await _reply(
+            update,
+            "The audio request failed. Check the local bot logs, OPENAI_API_KEY, "
+            "and your OpenAI account balance.",
+        )
+        return
+
+    await _reply(update, _with_transcription(transcript, answer))
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     LOGGER.exception("Unhandled Telegram update error", exc_info=context.error)
 
@@ -165,6 +219,9 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("whoami", whoami))
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(
+        MessageHandler(filters.VOICE | filters.AUDIO, handle_audio_message)
+    )
+    application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
     application.add_error_handler(error_handler)
@@ -179,6 +236,8 @@ async def post_init(application: Application) -> None:
     application.bot_data["memory_context"] = memory_context
     tools = await _load_tavily_tools(settings)
     application.bot_data["agent_service"] = AgentService(settings, checkpointer, tools)
+    if settings.transcription_provider != "off":
+        application.bot_data["transcription_service"] = TranscriptionService(settings)
     status_task = application.create_task(_write_status_loop(settings))
     application.bot_data["status_task"] = status_task
 
@@ -250,6 +309,10 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     temp_path.replace(path)
+
+
+def _with_transcription(transcript: str, answer: str) -> str:
+    return f"Transcription:\n{transcript}\n\n{answer}"
 
 
 def main() -> None:

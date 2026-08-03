@@ -37,6 +37,8 @@ class ConfigTests(unittest.TestCase):
                 "TELEGRAM_ALLOWED_USER_IDS": "123",
                 "AGENT_WORKSPACE": workspace,
                 "DEEPSEEK_MODEL": "deepseek-v4-flash",
+                "OPENAI_API_KEY": "openai-secret",
+                "TRANSCRIPTION_LANGUAGE": "en",
                 "TAVILY_API_KEY": "tavily-secret",
                 "TAVILY_DEFAULT_PARAMETERS": '{"max_results": 5}',
             }
@@ -45,6 +47,8 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(settings.allowed_user_ids, {123})
         self.assertEqual(settings.agent_workspace, Path(workspace).resolve())
+        self.assertEqual(settings.openai_api_key, "openai-secret")
+        self.assertEqual(settings.transcription_language, "en")
         self.assertEqual(settings.tavily_api_key, "tavily-secret")
         self.assertEqual(settings.tavily_default_parameters, {"max_results": 5})
 

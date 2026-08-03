@@ -25,6 +25,7 @@ class TavilyToolTests(unittest.IsolatedAsyncioTestCase):
             deepseek_model="deepseek-v4-flash",
             agent_workspace=Path.cwd(),
             agent_memory_db=Path.cwd() / ".agent_memory" / "checkpoints.sqlite",
+            agent_status_file=Path.cwd() / ".agent_runtime" / "status.json",
             tavily_api_key=None,
         )
 

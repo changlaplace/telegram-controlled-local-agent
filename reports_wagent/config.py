@@ -32,6 +32,7 @@ class Settings:
     deepseek_model: str
     agent_workspace: Path
     agent_memory_db: Path
+    agent_status_file: Path
     tavily_api_key: str | None = field(default=None, repr=False)
     tavily_mcp_url: str = "https://mcp.tavily.com/mcp/"
     tavily_default_parameters: dict[str, Any] = field(default_factory=dict)
@@ -65,6 +66,11 @@ class Settings:
             .expanduser()
             .resolve()
         )
+        status_file = (
+            Path(os.getenv("AGENT_STATUS_FILE", ".agent_runtime/status.json"))
+            .expanduser()
+            .resolve()
+        )
         tavily_default_parameters = _parse_json_object(
             os.getenv("TAVILY_DEFAULT_PARAMETERS", "").strip(),
             "TAVILY_DEFAULT_PARAMETERS",
@@ -79,6 +85,7 @@ class Settings:
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash").strip(),
             agent_workspace=workspace,
             agent_memory_db=memory_db,
+            agent_status_file=status_file,
             tavily_api_key=os.getenv("TAVILY_API_KEY", "").strip() or None,
             tavily_mcp_url=os.getenv(
                 "TAVILY_MCP_URL", "https://mcp.tavily.com/mcp/"

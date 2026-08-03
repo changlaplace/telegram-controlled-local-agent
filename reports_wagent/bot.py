@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
+from asyncio import Task
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -22,6 +29,7 @@ from reports_wagent.config import ConfigurationError, Settings
 
 LOGGER = logging.getLogger(__name__)
 TELEGRAM_MESSAGE_LIMIT = 4000
+STATUS_HEARTBEAT_SECONDS = 300
 
 
 def _thread_id(update: Update) -> str:
@@ -171,14 +179,21 @@ async def post_init(application: Application) -> None:
     application.bot_data["memory_context"] = memory_context
     tools = await _load_tavily_tools(settings)
     application.bot_data["agent_service"] = AgentService(settings, checkpointer, tools)
+    status_task = application.create_task(_write_status_loop(settings))
+    application.bot_data["status_task"] = status_task
 
 
 async def post_shutdown(application: Application) -> None:
+    settings: Settings = application.bot_data["settings"]
+    status_task: Task[None] | None = application.bot_data.get("status_task")
+    if status_task is not None:
+        status_task.cancel()
     memory_context: AbstractAsyncContextManager[AsyncSqliteSaver] | None = (
         application.bot_data.get("memory_context")
     )
     if memory_context is not None:
         await memory_context.__aexit__(None, None, None)
+    _write_status(settings, "stopped")
 
 
 async def _load_tavily_tools(settings: Settings) -> list[BaseTool]:
@@ -203,6 +218,38 @@ async def _load_tavily_tools(settings: Settings) -> list[BaseTool]:
     tools = await client.get_tools(server_name="tavily")
     LOGGER.info("Loaded %d Tavily MCP tool(s).", len(tools))
     return tools
+
+
+async def _write_status_loop(settings: Settings) -> None:
+    try:
+        _write_status(settings, "running")
+        while True:
+            await asyncio.sleep(STATUS_HEARTBEAT_SECONDS)
+            _write_status(settings, "running")
+    except asyncio.CancelledError:
+        _write_status(settings, "stopped")
+        raise
+
+
+def _write_status(settings: Settings, state: str) -> None:
+    payload: dict[str, Any] = {
+        "state": state,
+        "pid": os.getpid(),
+        "updated_at": datetime.now(UTC).isoformat(),
+        "workspace": str(settings.agent_workspace),
+        "memory_db": str(settings.agent_memory_db),
+        "model": settings.deepseek_model,
+        "tavily_mcp": bool(settings.tavily_api_key),
+        "allowed_users": len(settings.allowed_user_ids),
+    }
+    _write_json_atomic(settings.agent_status_file, payload)
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temp_path.replace(path)
 
 
 def main() -> None:

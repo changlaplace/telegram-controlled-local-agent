@@ -74,3 +74,54 @@ TAVILY_DEFAULT_PARAMETERS={"search_depth":"basic","max_results":5}
 
 Then restart the bot and ask something like `Search the web for the latest
 LangChain Deep Agents MCP docs and summarize with links.`
+
+## Background Run
+
+On Windows, use `Start-Process` as the `nohup`-style launcher. This starts the
+agent without a visible terminal window and writes logs under `.agent_runtime`:
+
+```powershell
+$root = "C:\Users\changlaplace\Desktop\reports_wagent"
+New-Item -ItemType Directory -Force "$root\.agent_runtime" | Out-Null
+Start-Process `
+  -FilePath "$root\.venv\Scripts\python.exe" `
+  -ArgumentList "main.py" `
+  -WorkingDirectory $root `
+  -WindowStyle Hidden `
+  -RedirectStandardOutput "$root\.agent_runtime\agent.out.log" `
+  -RedirectStandardError "$root\.agent_runtime\agent.err.log"
+```
+
+Or use the batch launcher:
+
+```powershell
+.\start_agent.bat
+```
+
+This starts the hidden agent and opens the tiny status monitor. To stop it:
+
+```powershell
+.\stop_agent.bat
+```
+
+To open only the status monitor:
+
+```powershell
+Start-Process `
+  -FilePath "$root\.venv\Scripts\pythonw.exe" `
+  -ArgumentList "monitor.py" `
+  -WorkingDirectory $root
+```
+
+The monitor reads `AGENT_STATUS_FILE`, which defaults to:
+
+```env
+AGENT_STATUS_FILE=./.agent_runtime/status.json
+```
+
+To stop the hidden agent:
+
+```powershell
+$status = Get-Content "$root\.agent_runtime\status.json" | ConvertFrom-Json
+Stop-Process -Id $status.pid
+```

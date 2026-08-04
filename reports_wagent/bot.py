@@ -22,7 +22,7 @@ from telegram.ext import (
     filters,
 )
 
-from reports_wagent.agent import AgentService
+from reports_wagent.agent import AGENT_REQUEST_TIMEOUT_SECONDS, AgentService
 from reports_wagent.config import ConfigurationError, Settings
 from reports_wagent.mcp_tools import load_mcp_tools
 from reports_wagent.transcription import (
@@ -87,7 +87,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Your Telegram user ID: {user.id}\n"
         f"Agent access: {access}\n\n"
         "Send a text request to work with the agent. Commands: /whoami, "
-        "/reset, /help",
+        "/cancel, /reset, /help",
     )
 
 
@@ -96,6 +96,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         update,
         "Send a text message to ask the agent to inspect or edit workspace files.\n"
         "/whoami - show your Telegram user ID\n"
+        "/cancel - stop the current agent request\n"
         "/reset - clear this chat's saved agent history\n"
         "/help - show this message",
     )
@@ -119,6 +120,18 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(update, "Conversation history cleared.")
 
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings: Settings = context.application.bot_data["settings"]
+    if not _is_allowed(update, settings):
+        await _reply(update, "Agent access is locked for this user. Use /whoami.")
+        return
+    service: AgentService = context.application.bot_data["agent_service"]
+    if service.cancel(_thread_id(update)):
+        await _reply(update, "Cancellation requested. You can send a new request now.")
+    else:
+        await _reply(update, "There is no active agent request to cancel.")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings: Settings = context.application.bot_data["settings"]
     if not _is_allowed(update, settings):
@@ -138,6 +151,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     service: AgentService = context.application.bot_data["agent_service"]
     try:
         answer = await service.ask(_thread_id(update), message.text)
+    except asyncio.CancelledError:
+        return
+    except TimeoutError:
+        await _reply(
+            update,
+            f"The agent request stopped after {AGENT_REQUEST_TIMEOUT_SECONDS // 60} "
+            "minutes. Try a smaller task or split it into steps.",
+        )
+        return
     except Exception:
         LOGGER.exception("Agent request failed for user %s", update.effective_user.id)
         await _reply(
@@ -185,6 +207,15 @@ async def handle_audio_message(
         transcript = await transcription_service.transcribe(payload)
         service: AgentService = context.application.bot_data["agent_service"]
         answer = await service.ask(_thread_id(update), transcript)
+    except asyncio.CancelledError:
+        return
+    except TimeoutError:
+        await _reply(
+            update,
+            f"The agent request stopped after {AGENT_REQUEST_TIMEOUT_SECONDS // 60} "
+            "minutes. Try a smaller task or split it into steps.",
+        )
+        return
     except Exception:
         LOGGER.exception(
             "Audio agent request failed for user %s", update.effective_user.id
@@ -216,6 +247,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("whoami", whoami))
+    application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(
         MessageHandler(filters.VOICE | filters.AUDIO, handle_audio_message)

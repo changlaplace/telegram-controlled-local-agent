@@ -1,6 +1,5 @@
 @echo off
 setlocal
-call "%~dp0stop_agent.bat"
-timeout /t 2 /nobreak >nul
-call "%~dp0start_agent.bat"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0agent_control.ps1" restart
+if errorlevel 1 pause
 endlocal

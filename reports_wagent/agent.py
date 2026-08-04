@@ -13,6 +13,8 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from reports_wagent.config import Settings
 
+AGENT_REQUEST_TIMEOUT_SECONDS = 600
+
 SYSTEM_PROMPT = """You are a careful coding agent working through Telegram.
 
 You may inspect and edit files inside the configured workspace using your filesystem
@@ -83,6 +85,7 @@ class AgentService:
     ) -> None:
         self._checkpointer = checkpointer
         self._locks: dict[str, asyncio.Lock] = {}
+        self._active_tasks: dict[str, asyncio.Task[dict[str, Any]]] = {}
         model = ChatDeepSeek(
             model=settings.deepseek_model,
             api_key=settings.deepseek_api_key,
@@ -93,7 +96,7 @@ class AgentService:
         backend = LocalShellBackend(
             root_dir=settings.agent_workspace,
             virtual_mode=True,
-            timeout=120,
+            timeout=300,
             max_output_bytes=80_000,
             env=_sanitized_shell_env(),
             inherit_env=False,
@@ -109,13 +112,23 @@ class AgentService:
 
     async def ask(self, thread_id: str, prompt: str) -> str:
         async with self._lock_for(thread_id):
-            result = await self._agent.ainvoke(
-                {"messages": [{"role": "user", "content": prompt}]},
-                config={
-                    "configurable": {"thread_id": thread_id},
-                    "recursion_limit": 50,
-                },
+            task = asyncio.create_task(
+                self._agent.ainvoke(
+                    {"messages": [{"role": "user", "content": prompt}]},
+                    config={
+                        "configurable": {"thread_id": thread_id},
+                        "recursion_limit": 50,
+                    },
+                )
             )
+            self._active_tasks[thread_id] = task
+            try:
+                result = await asyncio.wait_for(
+                    task, timeout=AGENT_REQUEST_TIMEOUT_SECONDS
+                )
+            finally:
+                if self._active_tasks.get(thread_id) is task:
+                    del self._active_tasks[thread_id]
 
         messages = result.get("messages", [])
         if not messages:
@@ -127,6 +140,13 @@ class AgentService:
     async def reset(self, thread_id: str) -> None:
         async with self._lock_for(thread_id):
             await self._checkpointer.adelete_thread(thread_id)
+
+    def cancel(self, thread_id: str) -> bool:
+        task = self._active_tasks.get(thread_id)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     def _lock_for(self, thread_id: str) -> asyncio.Lock:
         return self._locks.setdefault(thread_id, asyncio.Lock())

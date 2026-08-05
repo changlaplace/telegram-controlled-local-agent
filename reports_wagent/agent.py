@@ -26,6 +26,11 @@ Python project setup and dependency installation.
 When Tavily MCP tools are available, use them for live web search, URL extraction,
 crawling, and web research. Summarize web findings with source URLs.
 
+When the user explicitly asks you to modify this Telegram agent's own source code,
+the host project is available at the REPORTS_WAGENT_ROOT environment variable. Make
+focused changes there, run relevant tests, and call restart_agent only after the
+work is complete. Never modify .env or credentials unless explicitly requested.
+
 Make focused changes, explain what you changed, and ask before making broad,
 destructive, or system-level changes. Stay inside the configured workspace unless
 the user explicitly asks otherwise. Never request, reveal, or attempt to access
@@ -43,6 +48,7 @@ SHELL_ENV_ALLOWLIST = {
     "PATH",
     "PATHEXT",
     "PROCESSOR_ARCHITECTURE",
+    "REPORTS_WAGENT_ROOT",
     "PROGRAMDATA",
     "PROGRAMFILES",
     "PROGRAMFILES(X86)",

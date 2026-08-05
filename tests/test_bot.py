@@ -1,12 +1,16 @@
 import unittest
 from pathlib import Path
 
-from reports_wagent.bot import _chunks, _with_transcription
+from reports_wagent.bot import COMMAND_HELP, _chunks, _with_transcription
 from reports_wagent.config import Settings
 from reports_wagent.mcp_tools import load_mcp_tools
 
 
 class ChunkTests(unittest.TestCase):
+    def test_command_help_lists_every_command(self) -> None:
+        for command in ("start", "help", "whoami", "cancel", "restart", "reset"):
+            self.assertIn(f"/{command} ", COMMAND_HELP)
+
     def test_short_text_stays_in_one_chunk(self) -> None:
         self.assertEqual(_chunks("hello", limit=10), ["hello"])
 

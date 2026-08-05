@@ -34,6 +34,16 @@ function Get-ProcessInfo([int]$ProcessId) {
     return Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction SilentlyContinue
 }
 
+function Get-ProcessIdValue($ProcessInfo) {
+    if ($null -eq $ProcessInfo) {
+        return $null
+    }
+    if ($null -ne $ProcessInfo.ProcessId) {
+        return [int]$ProcessInfo.ProcessId
+    }
+    return [int]$ProcessInfo.Id
+}
+
 function Test-ScriptProcess([int]$ProcessId, [string]$ScriptName) {
     $ProcessInfo = Get-ProcessInfo $ProcessId
     $Pattern = '(^|[^A-Za-z0-9_.-])' + [regex]::Escape($ScriptName) + '([^A-Za-z0-9_.-]|$)'
@@ -68,8 +78,15 @@ function Get-MonitorProcess($Launch) {
 }
 
 function Get-AgentProcess($Launch, $Status) {
-    if ($null -ne $Launch -and $Launch.agent_launcher_pid -and (Test-ScriptProcess ([int]$Launch.agent_launcher_pid) "main.py")) {
-        return Get-ProcessInfo ([int]$Launch.agent_launcher_pid)
+    if ($null -ne $Launch -and $Launch.agent_launcher_pid) {
+        $LauncherId = [int]$Launch.agent_launcher_pid
+        if ((Test-ScriptProcess $LauncherId "supervisor.py") -or (Test-ScriptProcess $LauncherId "main.py")) {
+            return Get-ProcessInfo $LauncherId
+        }
+    }
+    $VenvProcess = Find-VenvProcess $PythonPath "supervisor.py"
+    if ($null -ne $VenvProcess) {
+        return $VenvProcess
     }
     $VenvProcess = Find-VenvProcess $PythonPath "main.py"
     if ($null -ne $VenvProcess) {
@@ -83,8 +100,8 @@ function Get-AgentProcess($Launch, $Status) {
 
 function Save-LaunchState($AgentProcess, $MonitorProcess) {
     $State = [ordered]@{
-        agent_launcher_pid = if ($null -eq $AgentProcess) { $null } else { [int]$AgentProcess.ProcessId }
-        monitor_pid = if ($null -eq $MonitorProcess) { $null } else { [int]$MonitorProcess.ProcessId }
+        agent_launcher_pid = Get-ProcessIdValue $AgentProcess
+        monitor_pid = Get-ProcessIdValue $MonitorProcess
         updated_at = [DateTime]::UtcNow.ToString("o")
     }
     Write-JsonFile $LaunchPath $State
@@ -110,7 +127,7 @@ function Start-Agent {
     $AgentProcess = Get-AgentProcess $Launch $Status
     if ($null -eq $AgentProcess) {
         $AgentProcess = Start-Process -FilePath $PythonPath `
-            -ArgumentList @("-u", "main.py") `
+            -ArgumentList @("-u", "supervisor.py") `
             -WorkingDirectory $ProjectRoot `
             -WindowStyle Hidden `
             -RedirectStandardOutput (Join-Path $RuntimeDir "agent.out.log") `

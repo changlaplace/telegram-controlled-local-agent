@@ -25,6 +25,7 @@ from telegram.ext import (
 from reports_wagent.agent import AGENT_REQUEST_TIMEOUT_SECONDS, AgentService
 from reports_wagent.config import ConfigurationError, Settings
 from reports_wagent.mcp_tools import load_mcp_tools
+from reports_wagent.restart_management import RESTART_EXIT_CODE, RestartManager
 from reports_wagent.transcription import (
     TranscriptionService,
     audio_payload_from_message,
@@ -33,6 +34,14 @@ from reports_wagent.transcription import (
 LOGGER = logging.getLogger(__name__)
 TELEGRAM_MESSAGE_LIMIT = 4000
 STATUS_HEARTBEAT_SECONDS = 300
+COMMAND_HELP = (
+    "/start - show bot status and commands\n"
+    "/help - show command help\n"
+    "/whoami - show your Telegram user and chat IDs\n"
+    "/cancel - stop the current agent request\n"
+    "/restart - restart the agent and load changes\n"
+    "/reset - clear this chat's saved agent history"
+)
 
 
 def _thread_id(update: Update) -> str:
@@ -86,19 +95,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Deep Agent bot is online.\n"
         f"Your Telegram user ID: {user.id}\n"
         f"Agent access: {access}\n\n"
-        "Send a text request to work with the agent. Commands: /whoami, "
-        "/cancel, /reset, /help",
+        "Send text or audio to work with the agent.\n\n"
+        f"Commands:\n{COMMAND_HELP}",
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(
         update,
-        "Send a text message to ask the agent to inspect or edit workspace files.\n"
-        "/whoami - show your Telegram user ID\n"
-        "/cancel - stop the current agent request\n"
-        "/reset - clear this chat's saved agent history\n"
-        "/help - show this message",
+        "Send text or audio to ask the agent to inspect files, run commands, or "
+        f"perform coding tasks.\n\nCommands:\n{COMMAND_HELP}",
     )
 
 
@@ -130,6 +136,21 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reply(update, "Cancellation requested. You can send a new request now.")
     else:
         await _reply(update, "There is no active agent request to cancel.")
+
+
+async def restart_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    settings: Settings = context.application.bot_data["settings"]
+    if not _is_allowed(update, settings):
+        await _reply(update, "Agent access is locked for this user. Use /whoami.")
+        return
+    manager: RestartManager = context.application.bot_data["restart_manager"]
+    if not manager.supervised:
+        await _reply(update, "Run restart_agent.bat to restart this agent.")
+        return
+    await _reply(update, "Restarting the agent now...")
+    context.application.create_task(_exit_for_supervised_restart())
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -169,6 +190,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
     await _reply(update, answer)
+    await _restart_if_requested(context, chat.id)
 
 
 async def handle_audio_message(
@@ -228,6 +250,7 @@ async def handle_audio_message(
         return
 
     await _reply(update, _with_transcription(transcript, answer))
+    await _restart_if_requested(context, chat.id)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -248,6 +271,7 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("whoami", whoami))
     application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CommandHandler("restart", restart_command))
     application.add_handler(CommandHandler("reset", reset))
     application.add_handler(
         MessageHandler(filters.VOICE | filters.AUDIO, handle_audio_message)
@@ -259,6 +283,23 @@ def build_application(settings: Settings) -> Application:
     return application
 
 
+async def _notify_startup(application: Application) -> None:
+    """Notify all allowed users that the agent has started successfully."""
+    settings: Settings = application.bot_data["settings"]
+    for user_id in settings.allowed_user_ids:
+        try:
+            await application.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "[OK] Agent started successfully. Ready to work!\n\n"
+                    f"Commands:\n{COMMAND_HELP}"
+                ),
+            )
+            LOGGER.info("Startup notification sent to user %s", user_id)
+        except Exception:
+            LOGGER.exception("Failed to notify user %s on startup", user_id)
+
+
 async def post_init(application: Application) -> None:
     settings: Settings = application.bot_data["settings"]
     settings.agent_memory_db.parent.mkdir(parents=True, exist_ok=True)
@@ -266,11 +307,18 @@ async def post_init(application: Application) -> None:
     checkpointer = await memory_context.__aenter__()
     application.bot_data["memory_context"] = memory_context
     tools = await load_mcp_tools(settings)
-    application.bot_data["agent_service"] = AgentService(settings, checkpointer, tools)
+    restart_manager = RestartManager()
+    application.bot_data["restart_manager"] = restart_manager
+    application.bot_data["agent_service"] = AgentService(
+        settings,
+        checkpointer,
+        [*tools, restart_manager.tool],
+    )
     if settings.transcription_provider != "off":
         application.bot_data["transcription_service"] = TranscriptionService(settings)
     status_task = application.create_task(_write_status_loop(settings))
     application.bot_data["status_task"] = status_task
+    await _notify_startup(application)
 
 
 async def post_shutdown(application: Application) -> None:
@@ -321,6 +369,30 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
 
 def _with_transcription(transcript: str, answer: str) -> str:
     return f"Transcription:\n{transcript}\n\n{answer}"
+
+
+async def _restart_if_requested(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int
+) -> None:
+    manager: RestartManager = context.application.bot_data["restart_manager"]
+    if not manager.consume():
+        return
+    if not manager.supervised:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Restart requested. Run restart_agent.bat to load the changes.",
+        )
+        return
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Restart request accepted. Restarting the agent now...",
+    )
+    context.application.create_task(_exit_for_supervised_restart())
+
+
+async def _exit_for_supervised_restart() -> None:
+    await asyncio.sleep(2)
+    os._exit(RESTART_EXIT_CODE)
 
 
 def main() -> None:

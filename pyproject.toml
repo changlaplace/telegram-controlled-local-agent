@@ -15,3 +15,8 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "python-telegram-bot>=22.8",
 ]
+
+[tool.uv.workspace]
+members = [
+    "agent_workspace/workspace/2026_Total_List/trading",
+]

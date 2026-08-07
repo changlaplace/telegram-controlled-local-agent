@@ -46,9 +46,15 @@ def _age_seconds(status: dict[str, Any]) -> float | None:
 class Monitor:
     def __init__(self) -> None:
         self.status_file = _status_file()
+        self.has_ui = False
         if not HAS_TKINTER:
             return
-        self.root = Tk()
+        try:
+            self.root = Tk()
+            self.has_ui = True
+        except Exception as e:
+            print(f"Skipping monitor UI: {e}")
+            return
         self.root.title("Reports Agent Monitor")
         self.root.geometry("360x170")
         self.root.attributes("-topmost", True)
@@ -79,8 +85,8 @@ class Monitor:
         self.path.pack(anchor="w", fill=X, pady=(8, 0))
 
     def run(self) -> None:
-        if not HAS_TKINTER:
-            print("Tkinter is not available. Monitor UI cannot be displayed. You can still check status from status.json manually.")
+        if not self.has_ui:
+            print("Monitor UI cannot be displayed (no display or Tkinter). You can check status.json manually.")
             sys.exit(0)
         self.refresh()
         self.root.mainloop()

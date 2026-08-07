@@ -1,7 +1,7 @@
 # Reports WAgent
 
 A private Telegram frontend for a DeepSeek-powered LangChain Deep Agent on
-Windows. The bot can edit files, run Python and shell commands, install packages,
+Windows and Linux. The bot can edit files, run Python and shell commands, install packages,
 use MCP tools, transcribe voice messages, and retain per-chat memory in SQLite.
 
 Bot username: `@chang_reports_agent_bot`
@@ -10,7 +10,7 @@ Display name: `Reports Agent`
 
 ## Setup
 
-Requirements: Windows, PowerShell, `uv`, a Telegram bot token, and a DeepSeek API
+Requirements: Windows or Linux, PowerShell or Bash, `uv`, a Telegram bot token, and a DeepSeek API
 key.
 
 1. Open the verified `@BotFather` account in Telegram, send `/newbot`, and keep
@@ -18,9 +18,9 @@ key.
 2. Create a DeepSeek API key at <https://platform.deepseek.com/api_keys>.
 3. Prepare the project:
 
-   ```powershell
+   ```bash
    uv sync
-   Copy-Item .env.example .env
+   cp .env.example .env
    ```
 
 4. Set at least these values in `.env`:
@@ -31,23 +31,36 @@ key.
    TELEGRAM_ALLOWED_USER_IDS=
    ```
 
-5. Double-click `start_agent.bat`, open the bot, and send `/whoami`.
+5. Launch the agent:
+   - On Windows: Double-click `start_agent.bat`
+   - On Linux/macOS: Run `./start_agent.sh`
+   
+   Then open the bot, and send `/whoami`.
 6. Put the returned numeric user ID in `TELEGRAM_ALLOWED_USER_IDS`, then
-   double-click `restart_agent.bat`.
+   restart the agent:
+   - On Windows: Double-click `restart_agent.bat`
+   - On Linux/macOS: Run `./restart_agent.sh`
 
 Multiple allowed IDs can be comma-separated. Keep the bot private and leave
 Telegram privacy mode enabled.
 
-## Windows Launchers
+## MCP Configuration
 
-The BAT files work without VS Code and can be double-clicked:
+The agent dynamically loads MCP servers from the environment file (`.env`) and from `mcp_servers.json` inside the `AGENT_WORKSPACE` directory.
 
-- `start_agent.bat` starts one hidden supervisor and one status monitor.
-- `stop_agent.bat` stops the complete agent process tree and leaves the monitor
+- **Dynamic Loading**: You can ask the bot to edit `agent_workspace/mcp_servers.json` to add or remove MCP servers during a conversation. Afterward, use `/restart` to reload the tools immediately.
+- **Built-in Support**: Xiaohongshu (via `XIAOHONGSHU_MCP_ENABLED`), LinkedIn, and Tavily integrations are pre-configured. Ensure the external services are running and toggle their settings in `.env`.
+
+## Launchers
+
+The launch scripts work without VS Code:
+
+- `start_agent` starts one hidden supervisor and one status monitor (if display is available).
+- `stop_agent` stops the complete agent process tree and leaves the monitor
   showing the stopped state.
-- `restart_agent.bat` stops and starts the agent, reloading code and `.env`.
+- `restart_agent` stops and starts the agent, reloading code and config.
 
-Using `restart_agent.bat` as the normal launcher is fine, but it terminates any
+Using `restart_agent` as the normal launcher is fine, but it terminates any
 task currently in progress. Repeated starts do not create duplicate agents or
 monitors.
 

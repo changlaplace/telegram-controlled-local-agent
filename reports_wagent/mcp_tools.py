@@ -51,6 +51,12 @@ def _mcp_connections(settings: Settings) -> dict[str, dict[str, Any]]:
             "env": settings.linkedin_mcp_env,
         }
 
+    if settings.xiaohongshu_mcp_enabled:
+        connections["xiaohongshu"] = {
+            "transport": "http",
+            "url": settings.xiaohongshu_mcp_url,
+        }
+
     for name, connection in settings.mcp_servers_json.items():
         if isinstance(connection, dict):
             connections[name] = connection
@@ -58,5 +64,21 @@ def _mcp_connections(settings: Settings) -> dict[str, dict[str, Any]]:
             LOGGER.warning(
                 "Skipping MCP server %s because its config is not an object.", name
             )
+
+    dynamic_mcp_path = settings.agent_workspace / "mcp_servers.json"
+    if dynamic_mcp_path.is_file():
+        try:
+            dynamic_config = json.loads(dynamic_mcp_path.read_text(encoding="utf-8"))
+            mcp_servers = dynamic_config.get("mcpServers", dynamic_config)
+            if isinstance(mcp_servers, dict):
+                for name, connection in mcp_servers.items():
+                    if isinstance(connection, dict):
+                        connections[name] = connection
+                    else:
+                        LOGGER.warning("Skipping dynamic MCP server %s because its config is not an object.", name)
+            else:
+                LOGGER.warning("Dynamic MCP config in %s is not an object.", dynamic_mcp_path)
+        except Exception as exc:
+            LOGGER.warning("Failed to parse dynamic MCP config from %s: %s", dynamic_mcp_path, exc)
 
     return connections

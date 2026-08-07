@@ -48,6 +48,8 @@ class ConfigTests(unittest.TestCase):
                 "TAVILY_API_KEY": "tavily-secret",
                 "TAVILY_DEFAULT_PARAMETERS": '{"max_results": 5}',
                 "LINKEDIN_MCP_ENABLED": "true",
+                "XIAOHONGSHU_MCP_ENABLED": "true",
+                "XIAOHONGSHU_MCP_URL": "http://localhost:18060/mcp",
             }
             with patch.dict(os.environ, env, clear=True):
                 settings = Settings.from_env()
@@ -60,6 +62,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.tavily_default_parameters, {"max_results": 5})
         self.assertTrue(settings.linkedin_mcp_enabled)
         self.assertEqual(settings.linkedin_mcp_command, "uvx")
+        self.assertTrue(settings.xiaohongshu_mcp_enabled)
+        self.assertEqual(settings.xiaohongshu_mcp_url, "http://localhost:18060/mcp")
 
 
 if __name__ == "__main__":

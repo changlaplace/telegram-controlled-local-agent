@@ -54,6 +54,8 @@ class Settings:
         default_factory=lambda: ["mcp-server-linkedin@latest"]
     )
     linkedin_mcp_env: dict[str, Any] = field(default_factory=dict)
+    xiaohongshu_mcp_enabled: bool = False
+    xiaohongshu_mcp_url: str = "http://localhost:18060/mcp"
     mcp_servers_json: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -102,6 +104,10 @@ class Settings:
             os.getenv("LINKEDIN_MCP_ENV", '{"UV_HTTP_TIMEOUT":"300"}').strip(),
             "LINKEDIN_MCP_ENV",
         )
+        xiaohongshu_mcp_enabled = _parse_bool(os.getenv("XIAOHONGSHU_MCP_ENABLED", ""))
+        xiaohongshu_mcp_url = os.getenv(
+            "XIAOHONGSHU_MCP_URL", "http://localhost:18060/mcp"
+        ).strip()
         mcp_servers_json = _parse_json_object(
             os.getenv("MCP_SERVERS_JSON", "").strip(),
             "MCP_SERVERS_JSON",
@@ -158,6 +164,8 @@ class Settings:
             linkedin_mcp_command=os.getenv("LINKEDIN_MCP_COMMAND", "uvx").strip(),
             linkedin_mcp_args=[str(arg) for arg in linkedin_mcp_args],
             linkedin_mcp_env=linkedin_mcp_env,
+            xiaohongshu_mcp_enabled=xiaohongshu_mcp_enabled,
+            xiaohongshu_mcp_url=xiaohongshu_mcp_url,
             mcp_servers_json=mcp_servers_json,
         )
 

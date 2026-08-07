@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from tkinter import BOTH, LEFT, Tk, X, ttk
 from typing import Any
+
+try:
+    from tkinter import BOTH, LEFT, Tk, X, ttk
+    HAS_TKINTER = True
+except ImportError:
+    HAS_TKINTER = False
 
 from dotenv import load_dotenv
 
@@ -40,6 +46,8 @@ def _age_seconds(status: dict[str, Any]) -> float | None:
 class Monitor:
     def __init__(self) -> None:
         self.status_file = _status_file()
+        if not HAS_TKINTER:
+            return
         self.root = Tk()
         self.root.title("Reports Agent Monitor")
         self.root.geometry("360x170")
@@ -71,6 +79,9 @@ class Monitor:
         self.path.pack(anchor="w", fill=X, pady=(8, 0))
 
     def run(self) -> None:
+        if not HAS_TKINTER:
+            print("Tkinter is not available. Monitor UI cannot be displayed. You can still check status from status.json manually.")
+            sys.exit(0)
         self.refresh()
         self.root.mainloop()
 
